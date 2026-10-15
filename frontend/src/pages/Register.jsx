@@ -1,104 +1,50 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../AuthContext.jsx';
 
-function Register() {
+export default function Register() {
+  const { register } = useAuth();
   const navigate = useNavigate();
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'student' });
+  const [error, setError] = useState('');
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
+  const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
-  function handleSubmit(e) {
+  const handleSubmit = (e) => {
     e.preventDefault();
-
-    if (password.length < 8) {
-      setError("Password must contain at least 8 characters.");
-      return;
+    setError('');
+    try {
+      register(form);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message);
     }
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
-    setError("");
-
-    navigate("/login");
-  }
+  };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <Link to="/" className="auth-logo">
-        Neurastep<span>.</span>
-        </Link>
+    <form className="card form-card" onSubmit={handleSubmit}>
+      <h2>Create account</h2>
+      {error && <p className="error">{error}</p>}
 
-        <div className="auth-heading">
-          <h1>Create account</h1>
-          <p>Join Neurastep and start learning.</p>
-        </div>
+      <label>Full name</label>
+      <input required value={form.name} onChange={set('name')} />
 
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="name">Full name</label>
-          <input
-            id="name"
-            type="text"
-            placeholder="Enter your full name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
+      <label>Email</label>
+      <input type="email" required value={form.email} onChange={set('email')} />
 
-          <label htmlFor="register-email">Email address</label>
-          <input
-            id="register-email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+      <label>Password (min 6 characters)</label>
+      <input type="password" required minLength={6} value={form.password} onChange={set('password')} />
 
-          <label htmlFor="register-password">Password</label>
-          <input
-            id="register-password"
-            type="password"
-            placeholder="At least 8 characters"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={8}
-            required
-          />
+      <label>I am a</label>
+      <select value={form.role} onChange={set('role')}>
+        <option value="student">Student</option>
+        <option value="instructor">Instructor</option>
+      </select>
 
-          <label htmlFor="confirm-password">Confirm password</label>
-          <input
-            id="confirm-password"
-            type="password"
-            placeholder="Re-enter your password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
-
-          {error && <p className="form-error">{error}</p>}
-
-          <button className="auth-button" type="submit">
-            Create Account →
-          </button>
-        </form>
-
-        <p className="auth-switch">
-          Already registered? <Link to="/login">Login</Link>
-        </p>
-
-        <Link className="back-link" to="/">
-          ← Back to Dashboard
-        </Link>
-      </div>
-    </div>
+      <button className="btn" type="submit">Register</button>
+      <p className="muted">
+        Already have an account? <Link to="/login">Login</Link>
+      </p>
+    </form>
   );
 }
-
-export default Register;

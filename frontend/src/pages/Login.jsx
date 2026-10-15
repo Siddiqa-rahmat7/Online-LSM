@@ -1,76 +1,52 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../AuthContext.jsx';
 
-function Login() {
+export default function Login() {
+  const { login } = useAuth();
   const navigate = useNavigate();
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [error, setError] = useState('');
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  function handleSubmit(e) {
+  const handleSubmit = (e) => {
     e.preventDefault();
-
-    if (!email.trim() || !password) {
-      setError("Please enter your email and password.");
-      return;
+    setError('');
+    try {
+      login(form.email, form.password);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message);
     }
-
-    setError("");
-
-    navigate("/");
-  }
+  };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <Link to="/" className="auth-logo">
-        Neurastep<span>.</span>
-        </Link>
+    <form className="card form-card" onSubmit={handleSubmit}>
+      <h2>Login</h2>
+      {error && <p className="error">{error}</p>}
 
-        <div className="auth-heading">
-          <h1>Welcome back!</h1>
-          <p>Login to continue your learning journey.</p>
-        </div>
+      <label>Email</label>
+      <input
+        type="email"
+        required
+        value={form.email}
+        onChange={(e) => setForm({ ...form, email: e.target.value })}
+      />
 
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="email">Email address</label>
-          <input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+      <label>Password</label>
+      <input
+        type="password"
+        required
+        value={form.password}
+        onChange={(e) => setForm({ ...form, password: e.target.value })}
+      />
 
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            placeholder="Enter your password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-
-          {error && <p className="form-error">{error}</p>}
-
-          <button className="auth-button" type="submit">
-            Login to LearnHub →
-          </button>
-        </form>
-
-        <p className="auth-switch">
-          Don't have an account? <Link to="/register">Register</Link>
-        </p>
-
-        <Link className="back-link" to="/">
-          ← Back to Dashboard
-        </Link>
-      </div>
-    </div>
+      <button className="btn" type="submit">Login</button>
+      <p className="muted">
+        New here? <Link to="/register">Create an account</Link>
+      </p>
+      <p className="muted small">
+        Demo: rahul@lms.com / learn123 · meera@lms.com / teach123 · admin@lms.com / admin123
+      </p>
+    </form>
   );
 }
-
-export default Login;
