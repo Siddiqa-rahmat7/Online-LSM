@@ -1,8 +1,13 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../AuthContext.jsx';
+import { useAuth } from '../AuthContext';
 
-// Login nahi hai to /login par bhej deta hai
-export default function ProtectedRoute({ children }) {
-  const { user } = useAuth();
-  return user ? children : <Navigate to="/login" />;
+export default function ProtectedRoute({ children, roles }) {
+  const { user, loading } = useAuth();
+
+  if (loading) return <p>Loading...</p>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (roles && !roles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
 }

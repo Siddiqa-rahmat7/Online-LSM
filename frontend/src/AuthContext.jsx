@@ -1,57 +1,49 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import api from './API/axios';
 
-const AuthContext = createContext(null);
-export const useAuth = () => useContext(AuthContext);
-
-// Demo users (backend aane tak). Naye register hue users localStorage mein jayenge.
-export const demoUsers = [
-  { name: 'Rahul Singh', email: 'rahul@lms.com', password: 'learn123', role: 'student' },
-  { name: 'Dr. Meera Sharma', email: 'meera@lms.com', password: 'teach123', role: 'instructor' },
-  { name: 'Admin', email: 'admin@lms.com', password: 'admin123', role: 'admin' },
-];
-
-const read = (key, fallback) => {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
+const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-  // page refresh par bhi login bana rahe, isliye localStorage se padhte hain
-  const [user, setUser] = useState(() => read('user', null));
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const allUsers = () => [...demoUsers, ...read('users', [])];
-
-  const login = (email, password) => {
-    const found = allUsers().find(
-      (u) => u.email === email.toLowerCase() && u.password === password
-    );
-    if (!found) throw new Error('Invalid email or password');
-    const safeUser = { name: found.name, email: found.email, role: found.role };
-    localStorage.setItem('user', JSON.stringify(safeUser));
-    setUser(safeUser);
-  };
-
-  const register = (form) => {
-    const email = form.email.toLowerCase();
-    if (allUsers().some((u) => u.email === email)) {
-      throw new Error('Email is already registered');
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setLoading(false);
+      return;
     }
-    const newUser = { ...form, email };
-    localStorage.setItem('users', JSON.stringify([...read('users', []), newUser]));
-    login(email, form.password);
+    api
+      .get('/auth/me')
+      .then((res) => setUser(res.data.user || res.data))
+      .catch(() => localStorage.removeItem('token'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const login = async (email, password) => {
+    const res = await api.post('/auth/login', { email, password });
+    localStorage.setItem('token', res.data.token);
+    setUser(res.data.user);
+    return res.data.user;
   };
+
+ const register = async (form) => {
+  const res = await api.post('/auth/register', form);
+  localStorage.setItem('token', res.data.token);
+  setUser(res.data.user);
+  return res.data.user;
+};
 
   const logout = () => {
-    localStorage.removeItem('user');
+    localStorage.removeItem('token');
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
 }
+
+export const useAuth = () => useContext(AuthContext);

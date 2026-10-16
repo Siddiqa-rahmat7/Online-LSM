@@ -1,42 +1,86 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getCourses } from '../data/courseStore.js';
-import { getGrades } from '../data/submissionStore.js';
+import api from '../API/axios';
 import { useAuth } from '../AuthContext.jsx';
-import useLocalStorage from '../useLocalStorage.js';
 
 export default function CourseDetail() {
-  const { id } = useParams();           // URL se course ka id
+  const { id } = useParams();
   const { user } = useAuth();
-  const course = getCourses().find((c) => c.id === Number(id));
-
-  // user ke hisaab se alag-alag keys, taaki har user ka data alag rahe
-  const [enrolled, setEnrolled] = useLocalStorage(`enrolled_${user.email}`, []);
-  const [done, setDone] = useLocalStorage(`done_${user.email}_${id}`, []);
-  const [subs, setSubs] = useLocalStorage(`subs_${user.email}_${id}`, {});
-
-  if (!course) {
-    return <p>Course not found. <Link to="/courses">Back to courses</Link></p>;
-  }
+  const [course, setCourse] = useState(null);
+  const [enrollment, setEnrollment] = useState(null);
+  const [subs, setSubs] = useState({}); // { assignmentId: submission }
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const isStudent = user.role === 'student';
-  const isEnrolled = enrolled.includes(course.id);
-  const canAccess = !isStudent || isEnrolled;   // instructor/admin ko hamesha access
+  const isEnrolled = !!enrollment;
+  const canAccess = !isStudent || isEnrolled; // instructor/admin ko hamesha access
 
-  const enroll = () => setEnrolled([...enrolled, course.id]);
+  const loadSubmissions = async () => {
+    const res = await api.get(`/submissions/my/${id}`);
+    const map = {};
+    res.data.forEach((s) => (map[s.assignmentId] = s));
+    setSubs(map);
+  };
 
-  const toggleDone = (mid) =>
-    setDone(done.includes(mid) ? done.filter((m) => m !== mid) : [...done, mid]);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.get(`/courses/${id}`);
+        setCourse(res.data);
+        if (isStudent) {
+          const my = await api.get('/enrollments/my');
+          const found = my.data.find((e) => e.course?._id === id) || null;
+          setEnrollment(found);
+          if (found) await loadSubmissions();
+        }
+      } catch (err) {
+        setError(err.response?.data?.message || 'Course not found');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isStudent]);
 
-  const submit = (aid, text) => setSubs({ ...subs, [aid]: text });
+  const enroll = async () => {
+    try {
+      const res = await api.post(`/enrollments/${id}`);
+      setEnrollment(res.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not enroll');
+    }
+  };
 
-  // progress = (complete materials + submit assignments) / total
+  const toggleDone = async (materialId) => {
+    try {
+      const res = await api.put(`/enrollments/${id}/toggle/${materialId}`);
+      setEnrollment(res.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not update');
+    }
+  };
+
+  const submit = async (assignmentId, content) => {
+    const res = await api.post(`/submissions/${id}/${assignmentId}`, { content });
+    setSubs({ ...subs, [assignmentId]: res.data });
+  };
+
+  if (loading) return <p className="muted">Loading...</p>;
+  if (!course) {
+    return (
+      <p>
+        {error || 'Course not found.'} <Link to="/courses">Back to courses</Link>
+      </p>
+    );
+  }
+
+  const done = enrollment?.completedMaterials || [];
+  // progress = (complete kiye material + submit kiye assignments) / total
   const total = course.materials.length + course.assignments.length;
   const finished = done.length + Object.keys(subs).length;
   const progress = total ? Math.round((finished / total) * 100) : 0;
-
-  // instructor ne jo marks diye hain (assignment id ke hisaab se)
-  const grades = getGrades(user.email, id);
 
   return (
     <>
@@ -44,7 +88,8 @@ export default function CourseDetail() {
         <span className="tag">{course.category}</span>
         <h1 className="page-title">{course.title}</h1>
         <p>{course.description}</p>
-        <p className="small muted">Instructor: {course.instructor}</p>
+        <p className="small muted">Instructor: {course.instructor?.name}</p>
+        {error && <p className="error">{error}</p>}
 
         {isStudent && !isEnrolled && (
           <button className="btn" onClick={enroll}>Enroll in this course</button>
@@ -52,7 +97,9 @@ export default function CourseDetail() {
         {isStudent && isEnrolled && (
           <>
             <p className="success">You are enrolled</p>
-            <div className="bar"><div className="bar-fill" style={{ width: `${progress}%` }} /></div>
+            <div className="bar">
+              <div className="bar-fill" style={{ width: `${progress}%` }} />
+            </div>
             <p className="small">{progress}% complete</p>
           </>
         )}
@@ -63,8 +110,9 @@ export default function CourseDetail() {
       ) : (
         <>
           <h2>Learning Materials</h2>
+          {course.materials.length === 0 && <p className="muted">No materials yet.</p>}
           {course.materials.map((m) => (
-            <div className="card row" key={m.id}>
+            <div className="card row" key={m._id}>
               <div>
                 <strong>{m.title}</strong> <span className="tag">{m.type}</span>
                 <br />
@@ -74,8 +122,8 @@ export default function CourseDetail() {
                 <label className="check">
                   <input
                     type="checkbox"
-                    checked={done.includes(m.id)}
-                    onChange={() => toggleDone(m.id)}
+                    checked={done.includes(m._id)}
+                    onChange={() => toggleDone(m._id)}
                   />
                   Completed
                 </label>
@@ -84,14 +132,14 @@ export default function CourseDetail() {
           ))}
 
           <h2>Assignments</h2>
+          {course.assignments.length === 0 && <p className="muted">No assignments yet.</p>}
           {course.assignments.map((a) => (
             <AssignmentCard
-              key={a.id}
+              key={a._id}
               assignment={a}
-              saved={subs[a.id]}
-              grade={grades[a.id]}
+              saved={subs[a._id]}
               canSubmit={isStudent}
-              onSubmit={(text) => submit(a.id, text)}
+              onSubmit={(text) => submit(a._id, text)}
             />
           ))}
         </>
@@ -100,26 +148,41 @@ export default function CourseDetail() {
   );
 }
 
-function AssignmentCard({ assignment, saved, grade, canSubmit, onSubmit }) {
-  const [text, setText] = useState(saved || '');
+function AssignmentCard({ assignment, saved, canSubmit, onSubmit }) {
+  const [text, setText] = useState(saved?.content || '');
   const [msg, setMsg] = useState('');
 
-  const handleSubmit = (e) => {
+  // saved baad mein load hota hai, isliye text ko sync karo
+  useEffect(() => {
+    if (saved?.content) setText(saved.content);
+  }, [saved?.content]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit(text);
-    setMsg('Submitted!');
+    setMsg('');
+    try {
+      await onSubmit(text);
+      setMsg('Submitted!');
+    } catch (err) {
+      setMsg(err.response?.data?.message || 'Could not submit');
+    }
   };
+
+  const graded = saved && saved.grade !== null && saved.grade !== undefined;
 
   return (
     <div className="card">
-      <h3>{assignment.title} <span className="muted small">({assignment.maxMarks} marks)</span></h3>
+      <h3>{assignment.title}</h3>
       <p>{assignment.description}</p>
+      {assignment.dueDate && (
+        <p className="small muted">Due: {new Date(assignment.dueDate).toLocaleDateString()}</p>
+      )}
 
       {canSubmit && (
         <form onSubmit={handleSubmit}>
           <textarea
             required
-            rows={3}
+            rows={4}
             placeholder="Write your answer or paste a link (GitHub, Drive...)"
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -127,17 +190,19 @@ function AssignmentCard({ assignment, saved, grade, canSubmit, onSubmit }) {
           <button className="btn btn-small" type="submit">
             {saved ? 'Update submission' : 'Submit'}
           </button>
-          {msg && <span className="success small"> {msg}</span>}
-          {saved && !msg && <p className="small muted">Already submitted.</p>}
+          {msg && <p className="small muted">{msg}</p>}
         </form>
       )}
 
-      {grade && (
+
+      {graded && (
         <p className="success">
-          Graded: {grade.marks}/{assignment.maxMarks}
-          {grade.feedback && ` · Feedback: ${grade.feedback}`}
+          Graded: {saved.grade}/{assignment.maxMarks}
+          {saved.feedback && ` - Feedback: ${saved.feedback}`}
         </p>
       )}
+
+      {saved && !graded && <p className="small muted">Submitted, waiting for grade.</p>}
     </div>
   );
 }

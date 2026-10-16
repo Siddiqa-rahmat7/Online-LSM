@@ -10,16 +10,16 @@ export default function Register() {
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-    try {
-      register(form);
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError('');
+  try {
+    await register(form);
+    navigate('/dashboard');
+  } catch (err) {
+    setError(err.response?.data?.message || 'Registration failed');
+  }
+};
 
   return (
     <form className="card form-card" onSubmit={handleSubmit}>

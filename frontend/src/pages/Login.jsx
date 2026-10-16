@@ -8,16 +8,16 @@ export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-    try {
-      login(form.email, form.password);
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError('');
+  try {
+    await login(form.email, form.password);
+    navigate('/dashboard');
+  } catch (err) {
+    setError(err.response?.data?.message || 'Login failed');
+  }
+};
 
   return (
     <form className="card form-card" onSubmit={handleSubmit}>

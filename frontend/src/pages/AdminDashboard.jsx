@@ -1,92 +1,97 @@
-import { useState } from 'react';
-import { demoUsers } from '../AuthContext.jsx';
-import { getCourses, saveCourses } from '../data/courseStore.js';
-
-const read = (key, fallback) => {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-// Saare students ke enrollments: [{ email, courseId }]
-function allEnrollments() {
-  const rows = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key.startsWith('enrolled_')) {
-      const email = key.slice('enrolled_'.length);
-      read(key, []).forEach((courseId) => rows.push({ email, courseId }));
-    }
-  }
-  return rows;
-}
-
-// Total assignment submissions
-function countSubmissions() {
-  let count = 0;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key.startsWith('subs_')) count += Object.keys(read(key, {})).length;
-  }
-  return count;
-}
+import { useState, useEffect } from 'react';
+import api from '../API/axios';
 
 export default function AdminDashboard() {
-  const [registered, setRegistered] = useState(read('users', []));
-  const [courses, setCourses] = useState(getCourses());
+  const [users, setUsers] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [enrollments, setEnrollments] = useState([]);
+  const [stats, setStats] = useState({
+    students: 0,
+    instructors: 0,
+    courses: 0,
+    enrollments: 0,
+    submissions: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const users = [...demoUsers, ...registered];
-  const enrollments = allEnrollments().filter((e) =>
-    courses.some((c) => c.id === e.courseId)
-  );
+  const load = async () => {
+    try {
+      const [u, c, e, s] = await Promise.all([
+        api.get('/admin/users'),
+        api.get('/courses'),
+        api.get('/admin/enrollments'),
+        api.get('/admin/stats'),
+      ]);
+      setUsers(u.data);
+      setCourses(c.data);
+      setEnrollments(e.data.filter((x) => x.student && x.course));
+      setStats(s.data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not load admin data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const titleOf = (id) => courses.find((c) => c.id === id)?.title;
+  useEffect(() => {
+    load();
+  }, []);
 
-  // Sabse popular courses
+  // Sabse popular courses (enrollments ke hisaab se)
   const counts = courses
     .map((c) => ({
       title: c.title,
-      count: enrollments.filter((e) => e.courseId === c.id).length,
+      count: enrollments.filter((e) => e.course._id === c._id).length,
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
   const maxCount = Math.max(1, ...counts.map((c) => c.count));
 
-  const deleteUser = (email) => {
-    if (!window.confirm(`Delete ${email}?`)) return;
-    const list = registered.filter((u) => u.email !== email);
-    localStorage.setItem('users', JSON.stringify(list));
-    localStorage.removeItem(`enrolled_${email}`);
-    setRegistered(list);
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Delete ${u.email}?`)) return;
+    try {
+      await api.delete(`/admin/users/${u._id}`);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not delete user');
+    }
   };
 
-  const deleteCourse = (id) => {
+  const deleteCourse = async (id) => {
     if (!window.confirm('Delete this course?')) return;
-    const list = courses.filter((c) => c.id !== id);
-    saveCourses(list);
-    setCourses(list);
+    try {
+      await api.delete(`/courses/${id}`);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not delete course');
+    }
   };
+
+  if (loading) return <p className="muted">Loading...</p>;
 
   return (
     <>
       <h1 className="page-title">Admin Dashboard</h1>
+      {error && <p className="error">{error}</p>}
 
       <div className="stats">
-        <div className="stat"><b>{users.filter((u) => u.role === 'student').length}</b><span>Students</span></div>
-        <div className="stat"><b>{users.filter((u) => u.role === 'instructor').length}</b><span>Instructors</span></div>
-        <div className="stat"><b>{courses.length}</b><span>Courses</span></div>
-        <div className="stat"><b>{enrollments.length}</b><span>Enrollments</span></div>
-        <div className="stat"><b>{countSubmissions()}</b><span>Submissions</span></div>
+        <div className="stat"><b>{stats.students}</b><span>Students</span></div>
+        <div className="stat"><b>{stats.instructors}</b><span>Instructors</span></div>
+        <div className="stat"><b>{stats.courses}</b><span>Courses</span></div>
+        <div className="stat"><b>{stats.enrollments}</b><span>Enrollments</span></div>
+        <div className="stat"><b>{stats.submissions}</b><span>Submissions</span></div>
       </div>
 
       <h2>Most popular courses</h2>
       <div className="card">
+        {counts.length === 0 && <p className="muted">No courses yet.</p>}
         {counts.map((c) => (
           <div className="chart-row" key={c.title}>
             <span className="chart-label">{c.title}</span>
-            <div className="bar"><div className="bar-fill" style={{ width: `${(c.count / maxCount) * 100}%` }} /></div>
+            <div className="bar">
+              <div className="bar-fill" style={{ width: `${(c.count / maxCount) * 100}%` }} />
+            </div>
             <span>{c.count}</span>
           </div>
         ))}
@@ -94,17 +99,21 @@ export default function AdminDashboard() {
 
       <h2>Users</h2>
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr>
+        </thead>
         <tbody>
           {users.map((u) => (
-            <tr key={u.email}>
+            <tr key={u._id}>
               <td>{u.name}</td>
               <td>{u.email}</td>
               <td><span className="tag">{u.role}</span></td>
               <td>
-                {/* demo users delete nahi hote */}
-                {registered.some((r) => r.email === u.email) && (
-                  <button className="btn btn-small btn-danger" onClick={() => deleteUser(u.email)}>Delete</button>
+                {/* admin delete nahi hota */}
+                {u.role !== 'admin' && (
+                  <button className="btn btn-small btn-danger" onClick={() => deleteUser(u)}>
+                    Delete
+                  </button>
                 )}
               </td>
             </tr>
@@ -114,14 +123,20 @@ export default function AdminDashboard() {
 
       <h2>Courses</h2>
       <table>
-        <thead><tr><th>Title</th><th>Category</th><th>Instructor</th><th></th></tr></thead>
+        <thead>
+          <tr><th>Title</th><th>Category</th><th>Instructor</th><th></th></tr>
+        </thead>
         <tbody>
           {courses.map((c) => (
-            <tr key={c.id}>
+            <tr key={c._id}>
               <td>{c.title}</td>
               <td>{c.category}</td>
-              <td>{c.instructor}</td>
-              <td><button className="btn btn-small btn-danger" onClick={() => deleteCourse(c.id)}>Delete</button></td>
+              <td>{c.instructor?.name}</td>
+              <td>
+                <button className="btn btn-small btn-danger" onClick={() => deleteCourse(c._id)}>
+                  Delete
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -132,10 +147,15 @@ export default function AdminDashboard() {
         <p className="muted">No enrollments yet.</p>
       ) : (
         <table>
-          <thead><tr><th>Student</th><th>Course</th></tr></thead>
+          <thead>
+            <tr><th>Student</th><th>Course</th></tr>
+          </thead>
           <tbody>
-            {enrollments.map((e, i) => (
-              <tr key={i}><td>{e.email}</td><td>{titleOf(e.courseId)}</td></tr>
+            {enrollments.map((e) => (
+              <tr key={e._id}>
+                <td>{e.student.email}</td>
+                <td>{e.course.title}</td>
+              </tr>
             ))}
           </tbody>
         </table>
